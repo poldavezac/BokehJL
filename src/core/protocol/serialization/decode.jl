@@ -44,62 +44,25 @@ function deserialize!(𝐷::iDocument, 𝐶::JSDict, 𝐵::Buffers)
     decode(𝐶, Deserializer(𝐷, 𝐵))
 end
 
-
-
 decodefield(::Type, ::Symbol, @nospecialize(η)) = η
 
-const _TYPES = (
-      "number", "ref", "value", "field", "expr", "slice", "map"  , "set",
-      "object"  , "bytes", "typed_array", "ndarray", "rootadded",
-      "rootremoved", "titlechanged", "modelchanged", "columndatachanged",
-      "columnsstreamed", "columnspatched", "bokeh_event",
- )
-
-@eval function decode(@nospecialize(η), 𝑅::Deserializer)
-    if η isa _👻Simple
-        return η
-    elseif η isa Vector{Any}
-        return [decode(i, 𝑅) for i ∈ η]
-    elseif η isa JSDict
-        tpe = let x = pop!(η, "type", missing)
-            ismissing(x) && (x = pop!(η, "kind", missing))
-            ismissing(x) ? missing : lowercase(x)
-        end
-
-        $(let expr = :(if ismissing(tpe)
-                haskey(η, "id") ? _decode_object(η, 𝑅) : JSDict(i => decode(j, 𝑅) for (i, j) ∈ η)
-            end)
-            last = expr
-            for tpe ∈ _TYPES
-                val = :(if tpe == $(tpe)
-                    return $(Symbol("_decode_$(lowercase(tpe))")(η, 𝑅))
-                end)
-                push!(last.args, Expr(:elseif, val.args...))
-                last = val
-            end
-            push!(last, :(decode(Val(Symbol(tpe)), η, 𝑅)))
-            expr
-        end)
-    end
-end
-
-function _decode_number(η::JSDict, ::Deserializer)
+function _𝑑𝑒𝑐_number(η::JSDict, ::Deserializer)
     val = η["value"]
     return val == "nan" ? NaN64 : val == "-inf" ? -Inf64 : Inf64
 end
 
-_decode_number(η::JSDict, 𝑅::Deserializer)       = 𝑅.references[parse(Int64, η["id"])]
-_decode_value(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_decode_field(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_decode_expr(η::JSDict, 𝑅::Deserializer)         = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_decode_map(η::JSDict, 𝑅::Deserializer)          = JSDict(i => decode(j, 𝑅) for (i, j) ∈ η)
-_decode_set(η::JSDict, 𝑅::Deserializer)          = Set(decode(j, 𝑅) for j ∈ η)
-_decode_typed_array(η::JSDict, 𝑅::Deserializer)  = _reshape(decode(η["array"], 𝑅), η["dtype"], Any[], η["order"])
-_decode_ndarray(η::JSDict, 𝑅::Deserializer)      = _reshape(decode(η["array"], 𝑅), η["dtype"], η["shape"], η["order"])
-_decode_rootadded(η::JSDict, 𝑅::Deserializer)    = push!(𝑅.doc, decode(η["model"], 𝑅))
-_decode_titlechanged(η::JSDict, 𝑅::Deserializer) = 𝑅.doc.title = η["title"]
+_𝑑𝑒𝑐_number(η::JSDict, 𝑅::Deserializer)       = 𝑅.references[parse(Int64, η["id"])]
+_𝑑𝑒𝑐_value(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+_𝑑𝑒𝑐_field(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+_𝑑𝑒𝑐_expr(η::JSDict, 𝑅::Deserializer)         = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+_𝑑𝑒𝑐_map(η::JSDict, 𝑅::Deserializer)          = JSDict(i => decode(j, 𝑅) for (i, j) ∈ η)
+_𝑑𝑒𝑐_set(η::JSDict, 𝑅::Deserializer)          = Set(decode(j, 𝑅) for j ∈ η)
+_𝑑𝑒𝑐_typed_array(η::JSDict, 𝑅::Deserializer)  = _reshape(decode(η["array"], 𝑅), η["dtype"], Any[], η["order"])
+_𝑑𝑒𝑐_ndarray(η::JSDict, 𝑅::Deserializer)      = _reshape(decode(η["array"], 𝑅), η["dtype"], η["shape"], η["order"])
+_𝑑𝑒𝑐_rootadded(η::JSDict, 𝑅::Deserializer)    = push!(𝑅.doc, decode(η["model"], 𝑅))
+_𝑑𝑒𝑐_titlechanged(η::JSDict, 𝑅::Deserializer) = 𝑅.doc.title = η["title"]
 
-function _decode_object(η::JSDict, 𝑅::Deserializer)
+function _𝑑𝑒𝑐_object(η::JSDict, 𝑅::Deserializer)
     if haskey(η, "id")
         get!(𝑅.models, parse(Int64, η["id"])) do
             return _MODEL_TYPES[Symbol(𝐼["name"])](;
@@ -115,12 +78,12 @@ function _decode_object(η::JSDict, 𝑅::Deserializer)
     end
 end
 
-function _decode_bytes(η::JSDict, 𝑅::Deserializer)
+function _𝑑𝑒𝑐_bytes(η::JSDict, 𝑅::Deserializer)
     data = η["data"]
     data isa String ? base64decode(data) : data isa Vector ? collect(data) : 𝑅.refrences[data["id"]]
 end
 
-function _decode_slice(η::JSDict)
+function _𝑑𝑒𝑐_slice(η::JSDict)
     start = let x = get(η, "start", nothing)
         isnothing(x) ? 1 : x + 1
     end,
@@ -131,7 +94,7 @@ function _decode_slice(η::JSDict)
     return step ≡ 1 ? (start:stop) :  (start:step:stop)
 end
 
-function _decode_rootremoved(η::JSDict, 𝑅::Deserializer)
+function _𝑑𝑒𝑐_rootremoved(η::JSDict, 𝑅::Deserializer)
     id = parse(Int64, η["model"]["id"])
     if 𝑅.doc[end].id ≡ id
         pop!(𝑅.doc)
@@ -140,7 +103,7 @@ function _decode_rootremoved(η::JSDict, 𝑅::Deserializer)
     end
 end
 
-function _decode_modelchanged(η::JSDict, 𝑅::Deserializer)
+function _𝑑𝑒𝑐_modelchanged(η::JSDict, 𝑅::Deserializer)
     mdl  = decode(η["model"], 𝑅)
     attr = _fieldname(η["attr"])
     val  = decodefield(typeof(mdl), attr, η["new"], 𝑅)
@@ -148,7 +111,7 @@ function _decode_modelchanged(η::JSDict, 𝑅::Deserializer)
     nothing
 end
 
-function _decode_columnspatched(η::JSDict, 𝑅::Deserializer)
+function _𝑑𝑒𝑐_columnspatched(η::JSDict, 𝑅::Deserializer)
     obj  = decode(η["column_source"], 𝑅)
     data = Dict{String, Vector{Pair}}(
         col => Pair[_𝑐𝑝_key(x) => _𝑐𝑝_value(y) for (x, y) ∈ lst]
@@ -157,13 +120,13 @@ function _decode_columnspatched(η::JSDict, 𝑅::Deserializer)
     Model.patch!(obj.data, data)
 end
 
-function _decode_columnsstreamed(η::JSDict, 𝑅::Deserializer)
+function _𝑑𝑒𝑐_columnsstreamed(η::JSDict, 𝑅::Deserializer)
     mdl  = getproperty(decode(η["model"], 𝑅), η["attr"])
     data = decode(η["data"], 𝑅)
     Model.update!(mdl, data)
 end
 
-function _decode_columnschanged(η::JSDict, 𝑅::Deserializer)
+function _𝑑𝑒𝑐_columnschanged(η::JSDict, 𝑅::Deserializer)
     mdl  = getproperty(decode(η["model"], 𝑅), η["attr"])
     data = decode(η["data"], 𝑅)
     Model.stream!(mdl, data; η["rollover"])
@@ -212,6 +175,33 @@ _𝑐𝑝_key(𝑥::_𝑐𝑝_SLICE) =  (;
 _𝑐𝑝_value(@nospecialize(x::Union{Number, String, iHasProps, AbstractVector{<:Number}})) = x
 _𝑐𝑝_value(@nospecialize(x::AbstractVector{Int64})) = collect(Int32, x)
 _𝑐𝑝_value(x::Vector{Any}) = collect((i for i ∈ x))
+
+@eval function decode(@nospecialize(η), 𝑅::Deserializer)
+    if η isa _👻Simple
+        return η
+    elseif η isa Vector{Any}
+        return [decode(i, 𝑅) for i ∈ η]
+    elseif η isa JSDict
+        tpe = let x = pop!(η, "type", missing)
+            ismissing(x) && (x = pop!(η, "kind", missing))
+            ismissing(x) ? missing : lowercase(x)
+        end
+
+        $(let expr = :(if ismissing(tpe)
+                haskey(η, "id") ? _𝑑𝑒𝑐_object(η, 𝑅) : JSDict(i => decode(j, 𝑅) for (i, j) ∈ η)
+            else
+                decode(Val(Symbol(tpe)), η, 𝑅)
+            end)
+            last = expr
+            for name ∈ names(@__MODULE__; all = true)
+                key  = "$name"
+                startswith(key, "_𝑑𝑒𝑐_") || continue
+                last = last.args[end] = Expr(:elseif, :(tpe == $(key[6:end])), :($name(η, 𝑅)), last.args[end])
+            end
+            expr
+        end)
+    end
+end
 
 export deserialize!
 end
