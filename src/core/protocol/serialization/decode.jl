@@ -77,7 +77,7 @@ const _TYPES = (
                 push!(last.args, Expr(:elseif, val.args...))
                 last = val
             end
-            push!(last, :(throw(ErrorException("Unknown deserialization key `$tpe`"))))
+            push!(last, :(decode(Val(Symbol(tpe)), η, 𝑅)))
             expr
         end)
     end
@@ -88,12 +88,16 @@ function _decode_number(η::JSDict, ::Deserializer)
     return val == "nan" ? NaN64 : val == "-inf" ? -Inf64 : Inf64
 end
 
-_decode_number(η::JSDict, 𝑅::Deserializer) = 𝑅.references[parse(Int64, η["id"])]
-_decode_value(η::JSDict, 𝑅::Deserializer) = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_decode_field(η::JSDict, 𝑅::Deserializer) = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_decode_expr(η::JSDict, 𝑅::Deserializer) = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_decode_map(η::JSDict, 𝑅::Deserializer) = JSDict(i => decode(j, 𝑅) for (i, j) ∈ η)
-_decode_set(η::JSDict, 𝑅::Deserializer) = Set(decode(j, 𝑅) for j ∈ η)
+_decode_number(η::JSDict, 𝑅::Deserializer)       = 𝑅.references[parse(Int64, η["id"])]
+_decode_value(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+_decode_field(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+_decode_expr(η::JSDict, 𝑅::Deserializer)         = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+_decode_map(η::JSDict, 𝑅::Deserializer)          = JSDict(i => decode(j, 𝑅) for (i, j) ∈ η)
+_decode_set(η::JSDict, 𝑅::Deserializer)          = Set(decode(j, 𝑅) for j ∈ η)
+_decode_typed_array(η::JSDict, 𝑅::Deserializer)  = _reshape(decode(η["array"], 𝑅), η["dtype"], Any[], η["order"])
+_decode_ndarray(η::JSDict, 𝑅::Deserializer)      = _reshape(decode(η["array"], 𝑅), η["dtype"], η["shape"], η["order"])
+_decode_rootadded(η::JSDict, 𝑅::Deserializer)    = push!(𝑅.doc, decode(η["model"], 𝑅))
+_decode_titlechanged(η::JSDict, 𝑅::Deserializer) = 𝑅.doc.title = η["title"]
 
 function _decode_object(η::JSDict, 𝑅::Deserializer)
     if haskey(η, "id")
@@ -115,11 +119,6 @@ function _decode_bytes(η::JSDict, 𝑅::Deserializer)
     data = η["data"]
     data isa String ? base64decode(data) : data isa Vector ? collect(data) : 𝑅.refrences[data["id"]]
 end
-
-_decode_typed_array(η::JSDict, 𝑅::Deserializer) = _reshape(decode(η["array"], 𝑅), η["dtype"], Any[], η["order"])
-_decode_ndarray(η::JSDict, 𝑅::Deserializer) = _reshape(decode(η["array"], 𝑅), η["dtype"], η["shape"], η["order"])
-_decode_rootadded(η::JSDict, 𝑅::Deserializer) = push!(𝑅.doc, decode(η["model"], 𝑅))
-_decode_titlechanged(η::JSDict, 𝑅::Deserializer) = 𝑅.doc.title = η["title"]
 
 function _decode_slice(η::JSDict)
     start = let x = get(η, "start", nothing)
@@ -168,9 +167,6 @@ function _decode_columnschanged(η::JSDict, 𝑅::Deserializer)
     mdl  = getproperty(decode(η["model"], 𝑅), η["attr"])
     data = decode(η["data"], 𝑅)
     Model.stream!(mdl, data; η["rollover"])
-end
-
-function _decode_messagesent(η::JSDict, 𝑅::Deserializer)
 end
 
 function _reshape(data::Union{Vector{Int8}, Vector{UInt8}}, dtype::String, shape::Vector{Any}, order::String)
