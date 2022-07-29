@@ -38,43 +38,44 @@ function encode(@nospecialize(η), 𝑅::Serializer)
         isnan(η) ? JSDict("type" => "number", "value" => "nan")                   :
         isinf(η) ? JSDict("type" => "number", "value" => η < 0 ? "-inf" : "+inf") :
         η
-    elseif η isa OrdinalRange
-        # warning : we're going to javascript, thus the ranges start at 0...
-        JSDict("type" => "slice", "start"  => first(η)-1, "step"  => 1, "stop"  => last(η))
-    elseif η isa StepRangeLen
-        # warning : we're going to javascript, thus the ranges start at 0...
-        JSDict("type" => "slice", "start"  => first(η)-1, "step"  => step(η), "stop"  => last(η))
-    elseif η isa AbstractVector{<:_👻Simple}
-        η # warning: put this **after** Ranges as these are considered AbstractVector types
-
-    elseif η isa AbstractSet{<:_👻Simple}
-        JSDict("type" => "set", "endtries" => collect(η))
+    elseif η isa AbstractVector
+        if η OrdinalRange
+            # warning : we're going to javascript, thus the ranges start at 0...
+            JSDict("type" => "slice", "start"  => first(η)-1, "step"  => 1, "stop"  => last(η))
+        elseif η isa StepRangeLen
+            # warning : we're going to javascript, thus the ranges start at 0...
+            JSDict("type" => "slice", "start"  => first(η)-1, "step"  => step(η), "stop"  => last(η))
+        elseif η isa AbstractVector{<:_👻Simple}
+            η # warning: put this **after** Ranges as these are considered AbstractVector types
+        else
+            Any[encode(i, 𝑅) for i ∈ η]
+        end
     elseif η isa AbstractSet
-        JSDict("type" => "set", "endtries" => [encode(i, 𝑅) for i ∈ η])
-
-
-    elseif η isa AbstractDict{<:_👻Simple, <:_👻Simple}
-        JSDict("type" => "map", η...)
-
-    elseif η isa AbstractDict{<:_👻Simple}
-        JSDict("type" => "map", (i => encode(j, 𝑅) for (i, j) ∈ η)...)
-
-
-    elseif η isa NamedTuple
-        JSDict("type" => "map", ("$i" => encode(j, 𝑅) for (i, j) ∈ η)...)
-
+        if η isa AbstractSet{<:_👻Simple}
+            JSDict("type" => "set", "endtries" => collect(η))
+        else
+            JSDict("type" => "set", "endtries" => [encode(i, 𝑅) for i ∈ η])
+        end
     elseif η isa AbstractDict
-        JSDict("type" => "map", (encode(i, 𝑅) => encode(j, 𝑅) for (i, j) ∈ η)...)
+        if η isa AbstractDict{<:_👻Simple, <:_👻Simple}
+            JSDict("type" => "map", η...)
 
-    elseif η isa Union{AbstractVector, AbstractSet, Tuple}
-        Any[encode(i, 𝑅) for i ∈ η]
+        elseif η isa AbstractDict{<:_👻Simple}
+            JSDict("type" => "map", (i => encode(j, 𝑅) for (i, j) ∈ η)...)
 
+        else
+            JSDict("type" => "map", (encode(i, 𝑅) => encode(j, 𝑅) for (i, j) ∈ η)...)
+        end
+    elseif η isa Tuple
+        if η isa NamedTuple
+            JSDict("type" => "map", ("$i" => encode(j, 𝑅) for (i, j) ∈ η)...)
+        else
+            Any[encode(i, 𝑅) for i ∈ η]
+        end
     elseif η isa Model.iSpec
         _encode_dataspec(η, 𝑅)
-
     elseif η isa Model.iHasProps
         _encode_model(η, 𝑅)
-
     elseif η isa Model.EnumType
         "$(η.value)"
     elseif η isa Union{Date, DateTime}

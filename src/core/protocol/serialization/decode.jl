@@ -20,7 +20,7 @@ Contains info needed for deserialization.
 """
 struct Deserializer
     references  :: JSDict
-    doc         :: iDocument
+    doc         :: Union{Nothing, iDocument}
 end
 
 function Deserializer(doc::iDocument, b::Buffers)
@@ -41,7 +41,24 @@ function deserialize!(𝐷::iDocument, 𝐶::JSDict, 𝐵::Buffers)
             end
         end
     end
-    decode(𝐶, Deserializer(𝐷, 𝐵))
+
+    if haskey(𝐶, "doc")
+        # decode
+        𝑅          = Deserializer(JSDict(𝐵...), nothing)
+        newroots   = [decode(i, 𝑅) :: iHasProps for i ∈ μ["doc"]["roots"]]
+        title      = μ["doc"]["title"] :: AbstractString
+
+        # apply
+        self.title = title
+        empty!(self)
+        push!(self, newroots...)
+    else
+        # decode
+        events = Any[decode(i, Deserializer(𝐷, 𝐵)) for i ∈ 𝐶["events"]]
+
+        # apply
+        foreach(apply!, events)
+    end
 end
 
 decodefield(::Type, ::Symbol, @nospecialize(η)) = η
@@ -51,39 +68,36 @@ function _𝑑𝑒𝑐_number(η::JSDict, ::Deserializer)
     return val == "nan" ? NaN64 : val == "-inf" ? -Inf64 : Inf64
 end
 
-_𝑑𝑒𝑐_number(η::JSDict, 𝑅::Deserializer)       = 𝑅.references[parse(Int64, η["id"])]
-_𝑑𝑒𝑐_value(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_𝑑𝑒𝑐_field(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_𝑑𝑒𝑐_expr(η::JSDict, 𝑅::Deserializer)         = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
-_𝑑𝑒𝑐_map(η::JSDict, 𝑅::Deserializer)          = JSDict(i => decode(j, 𝑅) for (i, j) ∈ η)
-_𝑑𝑒𝑐_set(η::JSDict, 𝑅::Deserializer)          = Set(decode(j, 𝑅) for j ∈ η)
-_𝑑𝑒𝑐_typed_array(η::JSDict, 𝑅::Deserializer)  = _reshape(decode(η["array"], 𝑅), η["dtype"], Any[], η["order"])
-_𝑑𝑒𝑐_ndarray(η::JSDict, 𝑅::Deserializer)      = _reshape(decode(η["array"], 𝑅), η["dtype"], η["shape"], η["order"])
-_𝑑𝑒𝑐_rootadded(η::JSDict, 𝑅::Deserializer)    = push!(𝑅.doc, decode(η["model"], 𝑅))
-_𝑑𝑒𝑐_titlechanged(η::JSDict, 𝑅::Deserializer) = 𝑅.doc.title = η["title"]
+@inline _𝑑𝑒𝑐_number(η::JSDict, 𝑅::Deserializer)       = 𝑅.references[parse(Int64, η["id"])]
+@inline _𝑑𝑒𝑐_value(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+@inline _𝑑𝑒𝑐_field(η::JSDict, 𝑅::Deserializer)        = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+@inline _𝑑𝑒𝑐_expr(η::JSDict, 𝑅::Deserializer)         = Dict{Symbol, Any}(Symbol(i) => decode(j, 𝑅) for (i, j) ∈ η)
+@inline _𝑑𝑒𝑐_map(η::JSDict, 𝑅::Deserializer)          = JSDict(i => decode(j, 𝑅) for (i, j) ∈ η)
+@inline _𝑑𝑒𝑐_set(η::JSDict, 𝑅::Deserializer)          = Set(decode(j, 𝑅) for j ∈ η)
+@inline _𝑑𝑒𝑐_typed_array(η::JSDict, 𝑅::Deserializer)  = _reshape(decode(η["array"], 𝑅), η["dtype"], Any[], η["order"])
+@inline _𝑑𝑒𝑐_ndarray(η::JSDict, 𝑅::Deserializer)      = _reshape(decode(η["array"], 𝑅), η["dtype"], η["shape"], η["order"])
+@inline _𝑑𝑒𝑐_object(η::JSDict, 𝑅::Deserializer)       = haskey(η, "id") ? _𝑑𝑒𝑐_model(η, 𝑅) : _𝑑𝑒𝑐_data(η, 𝑅)
 
-function _𝑑𝑒𝑐_object(η::JSDict, 𝑅::Deserializer)
-    if haskey(η, "id")
-        get!(𝑅.models, parse(Int64, η["id"])) do
-            return _MODEL_TYPES[Symbol(𝐼["name"])](;
-                id,
-                ((
-                    _fieldname(i) => decodefield(𝑇, _fieldname(i), decode(η, 𝑅))
-                    for (i, j) ∈ get(𝐼, "attributes", ())
-                )...)
-            )
-        end
-    else
-        throw(ErrorException("Not implemented"))
+function _𝑑𝑒𝑐_data end
+
+@inline function _𝑑𝑒𝑐_model(η::JSDict, 𝑅::Deserializer)
+    get!(𝑅.models, parse(Int64, η["id"])) do
+        return _MODEL_TYPES[Symbol(𝐼["name"])](;
+            id,
+            ((
+                _fieldname(i) => decodefield(𝑇, _fieldname(i), decode(η, 𝑅))
+                for (i, j) ∈ get(𝐼, "attributes", ())
+            )...)
+        )
     end
 end
 
-function _𝑑𝑒𝑐_bytes(η::JSDict, 𝑅::Deserializer)
+@inline function _𝑑𝑒𝑐_bytes(η::JSDict, 𝑅::Deserializer)
     data = η["data"]
     data isa String ? base64decode(data) : data isa Vector ? collect(data) : 𝑅.refrences[data["id"]]
 end
 
-function _𝑑𝑒𝑐_slice(η::JSDict)
+@inline function _𝑑𝑒𝑐_slice(η::JSDict)
     start = let x = get(η, "start", nothing)
         isnothing(x) ? 1 : x + 1
     end,
@@ -94,43 +108,86 @@ function _𝑑𝑒𝑐_slice(η::JSDict)
     return step ≡ 1 ? (start:stop) :  (start:step:stop)
 end
 
-function _𝑑𝑒𝑐_rootremoved(η::JSDict, 𝑅::Deserializer)
-    id = parse(Int64, η["model"]["id"])
-    if 𝑅.doc[end].id ≡ id
-        pop!(𝑅.doc)
+struct _TitleChanged
+    title :: String
+end
+@inline _𝑑𝑒𝑐_titlechanged(η::JSDict, 𝑅::Deserializer) = _TitleChanged(η["title"])
+apply!(𝐷::iDocument, obj::_TitleChanged) = 𝐷.title = obj.title
+
+struct _RootAdded
+    model :: iHasProps
+end
+@inline _𝑑𝑒𝑐_rootadded(η::JSDict, 𝑅::Deserializer) = _RootRemoved(_𝑑𝑒𝑐_model(η["model"], 𝑅))
+apply!(𝐷::iDocument, obj::_RootRemoved) = push!(𝐷, obj.model)
+
+struct _RootRemoved
+    model :: iHasProps
+end
+
+@inline function _𝑑𝑒𝑐_rootremoved(η::JSDict, 𝑅::Deserializer)
+    mdl = _𝑑𝑒𝑐_model(η["model"], 𝑅)
+    mdl ∈ (𝑅.doc) || throw(ErrorException("Missing root to be removed"))
+    return _RootRemoved(mdl)
+end
+
+function apply!(obj::_RootRemoved)
+    if 𝐷[end].id ≡ obj.model.id
+        pop!(𝐷)
     else
         throw(ErrorException("Incorrect id in RootRemoved"))
     end
 end
 
-function _𝑑𝑒𝑐_modelchanged(η::JSDict, 𝑅::Deserializer)
+struct _ModelChanged
+    model :: iHasProps
+    attr  :: Symbol
+    value :: Any
+end
+
+@inline function _𝑑𝑒𝑐_modelchanged(η::JSDict, 𝑅::Deserializer)
     mdl  = decode(η["model"], 𝑅)
     attr = _fieldname(η["attr"])
     val  = decodefield(typeof(mdl), attr, η["new"], 𝑅)
-    setproperty!(mdl, attr, val; patchdoc = true)
-    nothing
+    _ModelChanged(mdl, attr, Model.bokehconvert(bokehproperty(typeof(mdl), attr), val))
 end
 
-function _𝑑𝑒𝑐_columnspatched(η::JSDict, 𝑅::Deserializer)
-    obj  = decode(η["column_source"], 𝑅)
-    data = Dict{String, Vector{Pair}}(
-        col => Pair[_𝑐𝑝_key(x) => _𝑐𝑝_value(y) for (x, y) ∈ lst]
-        for (col, lst) ∈ η["patches"]
+function apply!(𝐷::iDocument, obj::_ModelChanged)
+    setproperty!(obj.model, obj.attr, obj.value; patchdoc = true)
+end
+
+@inline _𝑑𝑒𝑐_cds(η::JSDict, 𝑅::Deserializer) = getproperty(decode(η["model"], 𝑅), η["attr"])
+
+struct _CDS_Patched
+    model :: Model.DataDictContainer
+    data  :: Any
+end
+@inline function _𝑑𝑒𝑐_columnspatched(η::JSDict, 𝑅::Deserializer)
+    return _CDS_Patched(
+        _𝑑𝑒𝑐_cds(η),
+        Dict{String, Vector{Pair}}(
+            col => Pair[_𝑐𝑝_key(x) => _𝑐𝑝_value(y) for (x, y) ∈ lst]
+            for (col, lst) ∈ η["patches"]
+        )
     )
-    Model.patch!(obj.data, data)
+end
+@inline apply!(𝐷::iDocument, obj::_CDS_Patched) = Model.patch!(obj.model, obj.data)
+
+struct _CDS_Streamed
+    model    :: DataDictContainer
+    data     :: Any
+    rollover :: Union{Int, Nothing}
 end
 
-function _𝑑𝑒𝑐_columnsstreamed(η::JSDict, 𝑅::Deserializer)
-    mdl  = getproperty(decode(η["model"], 𝑅), η["attr"])
-    data = decode(η["data"], 𝑅)
-    Model.update!(mdl, data)
+@inline _𝑑𝑒𝑐_columnsstreamed(η::JSDict, 𝑅::Deserializer) = _CDS_Streamed(_𝑑𝑒𝑐_cds(η), decode(η["data"], 𝑅), decode(η["rollover"]))
+@inline apply!(𝐷::iDocument, obj::_CDS_Streamed) = Model.stream!(obj.model, obj.data; obj.rollover)
+
+struct _CDS_Changed
+    model    :: DataDictContainer
+    data     :: Any
 end
 
-function _𝑑𝑒𝑐_columnschanged(η::JSDict, 𝑅::Deserializer)
-    mdl  = getproperty(decode(η["model"], 𝑅), η["attr"])
-    data = decode(η["data"], 𝑅)
-    Model.stream!(mdl, data; η["rollover"])
-end
+@inline _𝑑𝑒𝑐_columndatachanged(η::JSDict, 𝑅::Deserializer) = _CDS_Changed(_𝑑𝑒𝑐_cds(η), decode(η["data"], 𝑅))
+@inline apply!(𝐷::iDocument, obj::_CDS_Changed) = Model.update!(obj.model, obj.data)
 
 function _reshape(data::Union{Vector{Int8}, Vector{UInt8}}, dtype::String, shape::Vector{Any}, order::String)
     arr = reinterpret(

@@ -259,15 +259,17 @@ function Events.pushcallback!(μ::Union{iPlot, iAbstractButton}, 𝐹::Function,
     𝐹
 end
 
+Protocol.Deserialize.apply!(::iDocument, e::Events.iActionEvent) = Events.executecallbacksDocumentReady(e)
+
 function Protocol.Deserialize.decode(::Val{:messagesent}, 𝐼::Protocol.Deserialize.JSDict, 𝑅::Protocol.Deserialize.Deserializer)
     if 𝐼["msg_type"] == "bokeh_event"
         data   = 𝐼["msg_data"]
         if data["event_name"] == "document_ready"
-            Events.executecallbacks(DocumentReady(𝑅.doc))
+            DocumentReady(𝑅.doc)
         else
-            Events.executecallbacks(getfield(_EVENT_TYPES, Symbol(data["event_name"]))(;
+            getfield(_EVENT_TYPES, Symbol(data["event_name"]))(;
                 (Symbol(i) => Protocol.Deserialize.decode(j, 𝑅) for (i, j) ∈ data["event_values"])...
-            ))
+            )
         end
     end
 end

@@ -4,7 +4,7 @@ using ..Events
 using ..Model
 using ..Documents
 using JSON
-const PROTOCOL_VERSION = v"2.4.2"
+const PROTOCOL_VERSION = v"3.0.0"
 
 const Buffers = Vector{Pair{String, Vector{UInt8}}}
 
