@@ -31,36 +31,32 @@ using ..Events
 using ..Protocol
 
 """
-    serializeattribute(::Type{Selection}, α::Symbol, η, 𝑅::Protocol.Serialize.iRules)
+    encodefield(::Type{Selection}, α::Symbol, η, 𝑅::Protocol.Serialize.iRules)
 
 Serialize values and move indices from a 1-based index to a 0-based index
 """
-function Protocol.Serialize.serializeattribute(::Type{Selection}, α::Symbol, η, 𝑅::Protocol.Serialize.iRules)
+function Protocol.Serialize.encodefield(::Type{Selection}, α::Symbol, η, 𝑅::Protocol.Serialize.iRules)
     return if α ∈ (:indices, :line_indices)
         η .- 1
     elseif α ≡ :multiline_indices
         Dict{String, Any}(i => j .- 1 for (i, j) ∈ η)
     else
-        Protocol.Serialize.serialref(η, 𝑅)
+        Protocol.Serialize.encode(η, 𝑅)
     end
 end
 
 """
-    deserialize(::Type{Selection}, α::Symbol, η, 𝑀::Protocol.Deserialize.Workbench)
+    decodefield(::Type{Selection}, α::Symbol, η, 𝑀::Protocol.Deserialize.Workbench)
 
 Read the JSON values and move indices from a 0-based index to a 1-based index
 """
-function Protocol.Deserialize.deserialize(::Type{Selection}, α:: Symbol, η, 𝑀::Protocol.Deserialize.Workbench)
+function Protocol.Deserialize.decodefield(::Type{Selection}, α:: Symbol, η)
     return if(α ∈ (:line_indices, :indices))
         Int64[i+1 for i ∈ η]
     elseif α ≡ :multiline_indices
         Dict{String, Vector{Int64}}((i => Int64[k+1 for k ∈ j] for (i, j) ∈ η)...)
     else
-        invoke(
-            Protocol.Deserialize.deserialize,
-            Tuple{iHasProps, Symbol, Any, Protocol.Deserialize.Workbench},
-            mdl, α, η; dotrigger
-        )
+        η
     end
 end
 

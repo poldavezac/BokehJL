@@ -58,7 +58,7 @@ for 𝐹 ∈ (:bokehmodels, :bokehids)
     @eval Model.$𝐹(𝐷::Document) = $𝐹(getfield(𝐷, :roots)...)
 end
 
-for 𝐹 ∈ (:last, :first, :isempty, :length)
+for 𝐹 ∈ (:last, :first, :isempty, :length, :lastindex, :firstindex, :eachindex)
     @eval Base.$𝐹(𝐷::Document) = $𝐹(getfield(𝐷, :roots))
 end
 Base.getindex(𝐷::Document, i::Integer) = getfield(𝐷, :roots)[i]
